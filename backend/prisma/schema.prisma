@@ -1,0 +1,331 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Modality {
+  visual
+  auditory
+  read_write
+  kinesthetic
+}
+
+enum ActivityCategory {
+  games_puzzles
+  question_sets
+}
+
+enum DifficultyLevel {
+  Easy
+  Medium
+  Hard
+}
+
+enum ApprovalStatus {
+  Approved
+  Pending_Review
+  Rejected
+  Archived
+}
+
+enum ScoringMethod {
+  time_and_correctness
+  correctness_only
+}
+
+enum StudentStatus {
+  Active
+  Inactive
+}
+
+enum AssessmentStatus {
+  Draft
+  Published
+}
+
+enum DailyNodeStatus {
+  completed
+  current
+  available
+  locked
+}
+
+enum AttemptStatus {
+  not_started
+  in_progress
+  paused
+  completed
+}
+
+model Admin {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  roleTitle    String     @default("Academic Learning Coordinator (Admin)")
+  institution  String     @default("VarchLearn Primary Academy")
+  textbooks    Textbook[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model ClassGroup {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  section     String            @default("A")
+  gradeLevel  Int
+  subjects    String[]
+  students    Student[]
+  assessments AssessmentClass[]
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+model Student {
+  id                       String                       @id @default(cuid())
+  name                     String
+  username                 String                       @unique
+  classId                  String
+  classGroup               ClassGroup                   @relation(fields: [classId], references: [id], onDelete: Restrict)
+  passwordHash             String
+  recoveryPinHash          String
+  avatarMascot             String                       @default("vee")
+  status                   StudentStatus                @default(Active)
+  registrationDate         DateTime                     @default(now())
+  stars                    Int                          @default(20)
+  completedActivitiesCount Int                          @default(0)
+  badges                   String[]
+  adaptedDifficulty        Json                         @default("{\"visual\":\"Easy\",\"auditory\":\"Easy\",\"read_write\":\"Easy\",\"kinesthetic\":\"Easy\"}")
+  learningPreferences      LearningPreferenceSnapshot[]
+  difficultyHistory        DifficultyAdjustment[]
+  dailyAssignments         DailyAssignment[]
+  assessmentAttempts       AssessmentAttempt[]
+  rewardEvents             RewardEvent[]
+  createdAt                DateTime                     @default(now())
+  updatedAt                DateTime                     @updatedAt
+
+  @@index([classId])
+}
+
+model LearningPreferenceSnapshot {
+  id                  String            @id @default(cuid())
+  studentId           String
+  student             Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  assessmentAttemptId String            @unique
+  assessmentAttempt   AssessmentAttempt @relation(fields: [assessmentAttemptId], references: [id], onDelete: Cascade)
+  assessmentName      String
+  visual              Int
+  auditory            Int
+  readWrite           Int
+  kinesthetic         Int
+  totalTimeSeconds    Int               @default(0)
+  scoringMethodUsed   ScoringMethod     @default(correctness_only)
+  recordedAt          DateTime          @default(now())
+
+  @@index([studentId, recordedAt])
+}
+
+model DifficultyAdjustment {
+  id             String          @id @default(cuid())
+  studentId      String
+  student        Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  modality       Modality
+  fromDifficulty DifficultyLevel
+  toDifficulty   DifficultyLevel
+  reason         String
+  adjustedAt     DateTime        @default(now())
+
+  @@index([studentId])
+}
+
+model Textbook {
+  id                String     @id @default(cuid())
+  fileName          String
+  originalName      String
+  filePath          String
+  fileSizeBytes     Int        @default(0)
+  className         String
+  subject           String
+  pageCount         Int        @default(1)
+  extractedRawText  String?    @db.Text
+  uploadedByAdminId String?
+  uploadedByAdmin   Admin?     @relation(fields: [uploadedByAdminId], references: [id], onDelete: SetNull)
+  chapters          Chapter[]
+  activities        Activity[]
+  createdAt         DateTime   @default(now())
+}
+
+model Chapter {
+  id         String   @id @default(cuid())
+  textbookId String
+  textbook   Textbook @relation(fields: [textbookId], references: [id], onDelete: Cascade)
+  number     Int
+  title      String
+  topics     Topic[]
+
+  @@index([textbookId])
+}
+
+model Topic {
+  id                String   @id @default(cuid())
+  chapterId         String
+  chapter           Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  title             String
+  subtopics         String[]
+  extractedConcepts String[]
+  extractedDiagrams String[]
+
+  @@index([chapterId])
+}
+
+model Activity {
+  id                   String               @id @default(cuid())
+  name                 String
+  modality             Modality
+  category             ActivityCategory
+  gameType             String
+  className            String
+  subject              String
+  chapter              String
+  topic                String
+  subtopic             String?
+  originalDifficulty   DifficultyLevel
+  difficulty           DifficultyLevel
+  targetAbility        String
+  scoringMethod        ScoringMethod        @default(correctness_only)
+  approvalStatus       ApprovalStatus       @default(Pending_Review)
+  textbookId           String?
+  textbook             Textbook?            @relation(fields: [textbookId], references: [id], onDelete: SetNull)
+  textbookSource       String?
+  aiGenerated          Boolean              @default(false)
+  generationSource     String               @default("manual")
+  estimatedMinutes     Int                  @default(5)
+  starReward           Int                  @default(12)
+  customization        Json
+  questions            Question[]
+  dailyAssignments     DailyAssignment[]
+  assessmentActivities AssessmentActivity[]
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  @@index([modality, approvalStatus])
+  @@index([className, subject])
+}
+
+model Question {
+  id           String   @id @default(cuid())
+  activityId   String
+  activity     Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  type         String   @default("academic")
+  prompt       String
+  options      String[]
+  correctIndex Int
+  hint         String?
+  explanation  String?
+  orderIndex   Int      @default(0)
+
+  @@index([activityId])
+}
+
+model DailyAssignment {
+  id               String          @id @default(cuid())
+  studentId        String
+  student          Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  activityId       String
+  activity         Activity        @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  assignedDate     String
+  isCarriedForward Boolean         @default(false)
+  status           DailyNodeStatus @default(available)
+  orderIndex       Int
+  earnedStars      Int?
+  completedAt      DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@unique([studentId, activityId, assignedDate])
+  @@index([studentId, status])
+}
+
+model Assessment {
+  id              String               @id @default(cuid())
+  name            String
+  description     String
+  status          AssessmentStatus     @default(Draft)
+  allowRetake     Boolean              @default(true)
+  retakeCondition String               @default("Permitted once per term upon Admin review")
+  publishedAt     DateTime?
+  classes         AssessmentClass[]
+  activities      AssessmentActivity[]
+  attempts        AssessmentAttempt[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+}
+
+model AssessmentClass {
+  assessmentId String
+  classId      String
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  classGroup   ClassGroup @relation(fields: [classId], references: [id], onDelete: Cascade)
+
+  @@id([assessmentId, classId])
+}
+
+model AssessmentActivity {
+  id            String        @id @default(cuid())
+  assessmentId  String
+  assessment    Assessment    @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  activityId    String
+  activity      Activity      @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  orderIndex    Int
+  scoringMethod ScoringMethod @default(correctness_only)
+
+  @@unique([assessmentId, activityId])
+  @@index([assessmentId])
+}
+
+model AssessmentAttempt {
+  id                   String                      @id @default(cuid())
+  assessmentId         String
+  assessment           Assessment                  @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  studentId            String
+  student              Student                     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  status               AttemptStatus               @default(not_started)
+  currentActivityIndex Int                         @default(0)
+  completedActivityIds String[]
+  activityResults      Json                        @default("{}")
+  totalTimeSeconds     Int                         @default(0)
+  scoringMethodUsed    ScoringMethod               @default(correctness_only)
+  startedAt            DateTime?
+  lastSavedAt          DateTime?
+  completedAt          DateTime?
+  preferenceSnapshot   LearningPreferenceSnapshot?
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
+
+  @@unique([assessmentId, studentId])
+  @@index([studentId])
+}
+
+model RewardEvent {
+  id           String   @id @default(cuid())
+  studentId    String
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  title        String
+  starsAwarded Int      @default(0)
+  badgeAwarded String?
+  sourceType   String   @default("daily_activity")
+  createdAt    DateTime @default(now())
+
+  @@index([studentId])
+}
+
+model AppSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+}
